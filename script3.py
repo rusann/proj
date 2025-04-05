@@ -74,7 +74,7 @@ def convert_genotype_to_haplotypes(g):
     elif g == '1':
         return ['0', '1']
     elif g == '9':
-        return ['0', '0']
+        return ['9', '9']
     else:
         return ['?', '?']
 
@@ -115,7 +115,7 @@ def main():
 
     indivs = read_indiv(args.indiv)
     target_indices_all = [i for i, rec in enumerate(indivs) if rec[2] == args.pop]
-    target_indices = target_indices_all[:20]
+    target_indices = target_indices_all[:10]
 
     if not target_indices:
         print("No individuals found for population:", args.pop)
@@ -124,13 +124,9 @@ def main():
     snps = read_snp(args.snp)
 
     missing_rates, snps_considered = compute_missing_rates(args.geno, snps, target_indices, args.chrom)
-    print(numpy.mean(numpy.array(list(missing_rates.values()))))
     print(f"Total SNPs on chromosome {args.chrom} considered: {snps_considered}")
 
-    filtered_indices = [i for i in target_indices if missing_rates[i] <= args.missing_thresh]
-    if not filtered_indices:
-        print("No individuals remain after filtering with missing threshold", args.missing_thresh)
-        sys.exit(1)
+    filtered_indices = target_indices
     print(f"Filtered individuals count: {len(filtered_indices)} (from {len(target_indices)})")
     with open(args.geno, 'r') as geno_f, open(args.out, 'w') as out_f:
         out_f.write("#POSITIONS\t#REF\t#ALT\tANCESTRAL\t#OUTGROUP\t#ARCHAIC\t#OBSERVATIONS\n")
@@ -153,6 +149,23 @@ def main():
                 continue
 
             geno_values = process_geno_line(geno_line, filtered_indices)
+            total = len(geno_values)
+            missing_count = geno_values.count('9')
+            missing_fraction = missing_count / total if total > 0 else 0
+
+            if missing_fraction > 0:
+                if missing_fraction < 0.85:
+                    counts = {}
+                    for g in geno_values:
+                        if g != '9':
+                            counts[g] = counts.get(g, 0) + 1
+                    if counts:
+                        majority_call = max(counts, key=counts.get)
+                    else:
+                        majority_call = '0'
+                    geno_values = [g if g != '9' else majority_call for g in geno_values]
+                else:
+                    geno_values = [g if g != '9' else '0' for g in geno_values]
             haplotypes = []
             for g in geno_values:
                 haplotypes.extend(convert_genotype_to_haplotypes(g))
